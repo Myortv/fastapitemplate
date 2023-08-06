@@ -4,9 +4,9 @@ from fastapi import FastAPI
 
 from starlette.middleware.cors import CORSMiddleware
 
-from app.db.base import DatabaseManager
+from plugins.controllers import DatabaseManager
 
-from prometheus_fastapi_instrumentator import Instrumentator
+# from prometheus_fastapi_instrumentator import Instrumentator
 
 
 app = FastAPI(
@@ -17,29 +17,20 @@ app = FastAPI(
     openapi_url=f'{settings.API_V1_STR}/openapi.json',
 )
 
+# create CORS middleware
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[
+            str(origin) for origin in settings.BACKEND_CORS_ORIGINS
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
 
-# from app.api.v1 import
-
-
-app.include_router(
-    # ROUTE HERE
-    prefix=settings.API_V1_STR,
-    tags=["Client"]
-)
-
-
-instrumentator = Instrumentator().instrument(app)
-
-
+# start database pool
 @app.on_event('startup')
 async def startup():
     await DatabaseManager.start(
@@ -49,10 +40,36 @@ async def startup():
         settings.POSTGRES_HOST,
     )
 
-    instrumentator.expose(app, include_in_schema=True, should_gzip=True)
-    await settings.fetch_timezones()
+
+# startup prometheus
+#
+# instrumentator = Instrumentator().instrument(app)
 
 
+# generate microservice-microsevice jwt token
+#
+# settings.api_token = api_token_manager.encode(
+#     {
+#         'service_name': app.title,
+#     }
+# )
+
+
+# shutdown database pool and aiohttp session
 @app.on_event('shutdown')
 async def shutdown():
     await DatabaseManager.stop()
+    await settings.aiohttp_session.close()
+
+
+# load routers
+# make sure to start plugins before importing routers
+from app.api.v1 import rename
+
+
+# bind routers
+app.include_router(
+    router=rename.router,
+    prefix=settings.API_V1_STR,
+    tags=["rename"]
+)
